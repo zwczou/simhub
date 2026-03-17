@@ -21,4 +21,12 @@ var (
 	ErrMissingDependency = errors.New("boot: missing dependency")
 	// ErrAmbiguousDependency 表示目标类型匹配到了多个依赖。
 	ErrAmbiguousDependency = errors.New("boot: ambiguous dependency")
+	// ErrPubSubClosed 表示 PubSub 已关闭，无法发布消息
+	ErrPubSubClosed = errors.New("boot: pubsub closed")
+	// ErrPubSubArgumentMismatch 表示发布参数与 topic 签名不匹配。
+	ErrPubSubArgumentMismatch = errors.New("boot: pubsub argument mismatch")
+	// ErrPubSubSignatureMismatch 表示同一 topic 下订阅者签名不一致。
+	ErrPubSubSignatureMismatch = errors.New("boot: pubsub signature mismatch")
+	// ErrStoreInstanceNotFound 表示指定名称的实例不存在。
+	ErrStoreInstanceNotFound = errors.New("boot: store instance not found")
 )

@@ -2,6 +2,7 @@ package boot
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -243,6 +244,35 @@ func TestPubSubStop(t *testing.T) {
 	}
 }
 
+// TestPubSubStopRemovesSubscriber 测试 Stop 后订阅者不再接收新消息。
+func TestPubSubStopRemovesSubscriber(t *testing.T) {
+	ps := NewPubSub()
+	var count atomic.Int64
+
+	sub := ps.Subscribe("stop_remove", func(v int) {
+		count.Add(1)
+	}, WithQueueSize(1))
+	sub.Start(context.Background())
+
+	if err := ps.Publish(context.Background(), "stop_remove", 1); err != nil {
+		t.Fatalf("publish first message: %v", err)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	sub.Stop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := ps.Publish(ctx, "stop_remove", 2); err != nil {
+		t.Fatalf("publish after stop: %v", err)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	if count.Load() != 1 {
+		t.Fatalf("expected stopped subscriber not to receive new messages, got %d", count.Load())
+	}
+}
+
 // TestPubSubStartOnce 测试 Start 只启动一次，重复调用无副作用
 func TestPubSubStartOnce(t *testing.T) {
 	ps := NewPubSub()
@@ -307,6 +337,50 @@ func TestPubSubHandlerNotFunc(t *testing.T) {
 		}
 	}()
 	ps.Subscribe("bad", "not_a_function")
+}
+
+// TestPubSubSignatureMismatch 测试同一 topic 下不同 handler 签名会被拒绝。
+func TestPubSubSignatureMismatch(t *testing.T) {
+	ps := NewPubSub()
+	ps.Subscribe("sig", func(v int) {})
+
+	defer func() {
+		err, ok := recover().(error)
+		if !ok {
+			t.Fatal("expected panic error for signature mismatch")
+		}
+		if !errors.Is(err, ErrPubSubSignatureMismatch) {
+			t.Fatalf("expected ErrPubSubSignatureMismatch, got %v", err)
+		}
+	}()
+
+	ps.Subscribe("sig", func(v string) {})
+}
+
+// TestPubSubPublishArgCountMismatch 测试发布参数个数不匹配时返回错误。
+func TestPubSubPublishArgCountMismatch(t *testing.T) {
+	ps := NewPubSub()
+	sub := ps.Subscribe("arg_count", func(v int, s string) {})
+	sub.Start(context.Background())
+
+	err := ps.Publish(context.Background(), "arg_count", 1)
+	if !errors.Is(err, ErrPubSubArgumentMismatch) {
+		t.Fatalf("expected ErrPubSubArgumentMismatch, got %v", err)
+	}
+	ps.Close()
+}
+
+// TestPubSubPublishArgTypeMismatch 测试发布参数类型不匹配时返回错误。
+func TestPubSubPublishArgTypeMismatch(t *testing.T) {
+	ps := NewPubSub()
+	sub := ps.Subscribe("arg_type", func(v int) {})
+	sub.Start(context.Background())
+
+	err := ps.Publish(context.Background(), "arg_type", "bad")
+	if !errors.Is(err, ErrPubSubArgumentMismatch) {
+		t.Fatalf("expected ErrPubSubArgumentMismatch, got %v", err)
+	}
+	ps.Close()
 }
 
 // TestPubSubTryPublish 测试 TryPublish，遇到阻塞的 channel 时不阻塞

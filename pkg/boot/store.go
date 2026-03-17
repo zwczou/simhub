@@ -70,11 +70,15 @@ func (s *Store[T]) Default() T {
 }
 
 // SetDefault 更改默认实例名称
-func (s *Store[T]) SetDefault(name string) {
+func (s *Store[T]) SetDefault(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if _, ok := s.instances[name]; !ok {
+		return fmt.Errorf("boot: set default %q: %w", name, ErrStoreInstanceNotFound)
+	}
 	s.defaultName = name
+	return nil
 }
 
 // Names 返回所有已注册的实例名称（排序后）
@@ -203,8 +207,8 @@ func (d *DbStore) Default() bun.IDB {
 }
 
 // SetDefault 更改默认数据库名称
-func (d *DbStore) SetDefault(name string) {
-	d.store.SetDefault(name)
+func (d *DbStore) SetDefault(name string) error {
+	return d.store.SetDefault(name)
 }
 
 // Names 返回所有已注册的数据库名称（排序后）

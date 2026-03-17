@@ -1,6 +1,7 @@
 package boot
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -103,9 +104,22 @@ func TestStoreSetDefault(t *testing.T) {
 	}
 
 	// 更改默认为 "order"
-	s.SetDefault("order")
+	if err := s.SetDefault("order"); err != nil {
+		t.Fatalf("set default: %v", err)
+	}
 	if got := s.Default(); got != "order-db" {
 		t.Fatalf("expected default 'order-db', got '%s'", got)
+	}
+}
+
+// TestStoreSetDefaultNotFound 测试设置不存在的默认实例会返回错误。
+func TestStoreSetDefaultNotFound(t *testing.T) {
+	s := NewStore[string]()
+	s.Set("user", "user-db")
+
+	err := s.SetDefault("missing")
+	if !errors.Is(err, ErrStoreInstanceNotFound) {
+		t.Fatalf("expected ErrStoreInstanceNotFound, got %v", err)
 	}
 }
 
@@ -442,9 +456,22 @@ func TestDbStoreSetDefault(t *testing.T) {
 		t.Fatalf("expected default 'user-db', got '%s'", got.(*mockIDB).id)
 	}
 
-	ds.SetDefault("order")
+	if err := ds.SetDefault("order"); err != nil {
+		t.Fatalf("set default: %v", err)
+	}
 	if got := ds.Default(); got.(*mockIDB).id != "order-db" {
 		t.Fatalf("expected default 'order-db', got '%s'", got.(*mockIDB).id)
+	}
+}
+
+// TestDbStoreSetDefaultNotFound 测试设置不存在的数据库默认实例会返回错误。
+func TestDbStoreSetDefaultNotFound(t *testing.T) {
+	ds := NewDbStore()
+	ds.Set("user", &mockIDB{id: "user-db"})
+
+	err := ds.SetDefault("missing")
+	if !errors.Is(err, ErrStoreInstanceNotFound) {
+		t.Fatalf("expected ErrStoreInstanceNotFound, got %v", err)
 	}
 }
 

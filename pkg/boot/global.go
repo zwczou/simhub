@@ -28,8 +28,8 @@ func GetBoot() *Boot {
 // ---------- DI 全局方法 ----------
 
 // Provide 注册全局依赖
-func Provide(values ...any) {
-	GetBoot().Provide(values...)
+func Provide(values ...any) error {
+	return GetBoot().Provide(values...)
 }
 
 // Invoke 获取全局依赖
@@ -63,8 +63,8 @@ func Close() {
 // ---------- Lifecycle 全局方法 ----------
 
 // Register 注册服务到全局管理器
-func Register(services ...Service) {
-	GetBoot().Register(services...)
+func Register(services ...Service) error {
+	return GetBoot().Register(services...)
 }
 
 // Load 加载全局管理器中的所有服务
@@ -73,6 +73,6 @@ func Load(ctx context.Context) error {
 }
 
 // Unload 卸载全局管理器中的所有服务
-func Unload(ctx context.Context) {
-	GetBoot().Unload(ctx)
+func Unload(ctx context.Context) error {
+	return GetBoot().Unload(ctx)
 }

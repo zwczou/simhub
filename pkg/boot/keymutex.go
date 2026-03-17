@@ -1,15 +1,15 @@
 package boot
 
 import (
+	"cmp"
 	"context"
-	"sort"
+	"slices"
 	"sync"
-	"unsafe"
 )
 
 // KeyMutex 基于 key 的互斥锁，每个 key 独立加锁，不同 key 之间互不阻塞
 // 内部使用引用计数自动回收不再使用的锁，保持最小内存占用
-type KeyMutex[T comparable] struct {
+type KeyMutex[T cmp.Ordered] struct {
 	mu    sync.Mutex
 	locks map[T]*keyEntry
 }
@@ -20,7 +20,7 @@ type keyEntry struct {
 }
 
 // NewKeyMutex 创建一个新的 KeyMutex 实例
-func NewKeyMutex[T comparable]() *KeyMutex[T] {
+func NewKeyMutex[T cmp.Ordered]() *KeyMutex[T] {
 	return &KeyMutex[T]{
 		locks: make(map[T]*keyEntry),
 	}
@@ -91,10 +91,8 @@ func (km *KeyMutex[T]) Locker(_ context.Context, keys ...T) *MultiKeyLocker[T] {
 		}
 	}
 
-	// 按内存表示排序以固定加锁顺序，避免死锁
-	sort.Slice(unique, func(i, j int) bool {
-		return lessComparable(unique[i], unique[j])
-	})
+	// 按稳定值顺序排序以固定加锁顺序，避免死锁。
+	slices.Sort(unique)
 
 	return &MultiKeyLocker[T]{
 		km:   km,
@@ -104,7 +102,7 @@ func (km *KeyMutex[T]) Locker(_ context.Context, keys ...T) *MultiKeyLocker[T] {
 
 // MultiKeyLocker 多 key 锁，持有多个 key 的批量锁操作
 // Lock 按固定顺序加锁，Unlock 按反序解锁，避免死锁
-type MultiKeyLocker[T comparable] struct {
+type MultiKeyLocker[T cmp.Ordered] struct {
 	km   *KeyMutex[T]
 	keys []T
 }
@@ -129,12 +127,4 @@ func (ml *MultiKeyLocker[T]) Unlock(ctx context.Context) {
 	for i := len(ml.keys) - 1; i >= 0; i-- {
 		ml.km.Unlock(ctx, ml.keys[i])
 	}
-}
-
-// lessComparable 通过内存表示比较两个 comparable 值，用于固定排序顺序
-func lessComparable[T comparable](a, b T) bool {
-	sa := unsafe.Sizeof(a)
-	pa := unsafe.String((*byte)(unsafe.Pointer(&a)), sa)
-	pb := unsafe.String((*byte)(unsafe.Pointer(&b)), sa)
-	return pa < pb
 }
