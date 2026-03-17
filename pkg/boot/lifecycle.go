@@ -16,39 +16,39 @@ type Lifecycle struct {
 	loaded   bool
 }
 
-// NewLifeCycle 创建一个新的 Lifecycle 实例。
-func NewLifeCycle() *Lifecycle {
+// NewLifecycle 创建一个新的 Lifecycle 实例。
+func NewLifecycle() *Lifecycle {
 	return &Lifecycle{
 		index: make(map[string]Service),
 	}
 }
 
-// Register 将服务注册到生命周期中，并按名称去重。
-func (lc *Lifecycle) Register(svc Service) error {
-	if isNilService(svc) {
-		return ErrNilService
-	}
-
-	name := svc.Name()
-	if name == "" {
-		return ErrEmptyServiceName
-	}
-
+// Register 将服务批量注册到生命周期中，并按名称去重。
+func (lc *Lifecycle) Register(svcs ...Service) error {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
 
 	if lc.loaded {
 		return ErrLifecycleLoaded
 	}
-	if lc.index == nil {
-		lc.index = make(map[string]Service)
-	}
-	if _, ok := lc.index[name]; ok {
-		return ErrDuplicateServiceName
+
+	for i, svc := range svcs {
+		if isNilService(svc) {
+			return fmt.Errorf("boot: register arg %d: %w", i, ErrNilService)
+		}
+
+		name := svc.Name()
+		if name == "" {
+			return fmt.Errorf("boot: register arg %d: %w", i, ErrEmptyServiceName)
+		}
+		if _, ok := lc.index[name]; ok {
+			return fmt.Errorf("boot: register service %q at arg %d: %w", name, i, ErrDuplicateServiceName)
+		}
+
+		lc.services = append(lc.services, svc)
+		lc.index[name] = svc
 	}
 
-	lc.services = append(lc.services, svc)
-	lc.index[name] = svc
 	return nil
 }
 

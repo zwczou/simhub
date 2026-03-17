@@ -38,16 +38,13 @@ func (s *stubService) Unload(ctx context.Context) error {
 
 // TestLifecycleRegisterKeepsOrder 验证注册顺序会被保留。
 func TestLifecycleRegisterKeepsOrder(t *testing.T) {
-	lc := NewLifeCycle()
+	lc := NewLifecycle()
 
 	first := &stubService{name: "first"}
 	second := &stubService{name: "second"}
 
-	if err := lc.Register(first); err != nil {
-		t.Fatalf("register first: %v", err)
-	}
-	if err := lc.Register(second); err != nil {
-		t.Fatalf("register second: %v", err)
+	if err := lc.Register(first, second); err != nil {
+		t.Fatalf("register services: %v", err)
 	}
 
 	if got := len(lc.services); got != 2 {
@@ -63,7 +60,7 @@ func TestLifecycleRegisterKeepsOrder(t *testing.T) {
 
 // TestLifecycleRegisterNilService 验证注册 nil 服务会返回错误。
 func TestLifecycleRegisterNilService(t *testing.T) {
-	lc := NewLifeCycle()
+	lc := NewLifecycle()
 
 	var svc *stubService
 	err := lc.Register(svc)
@@ -72,9 +69,26 @@ func TestLifecycleRegisterNilService(t *testing.T) {
 	}
 }
 
+// TestLifecycleRegisterMultipleServices 验证一次可注册多个服务。
+func TestLifecycleRegisterMultipleServices(t *testing.T) {
+	lc := NewLifecycle()
+
+	first := &stubService{name: "first"}
+	second := &stubService{name: "second"}
+	third := &stubService{name: "third"}
+
+	if err := lc.Register(first, second, third); err != nil {
+		t.Fatalf("register multiple services: %v", err)
+	}
+
+	if got := len(lc.services); got != 3 {
+		t.Fatalf("expected 3 services, got %d", got)
+	}
+}
+
 // TestLifecycleRegisterEmptyServiceName 验证空名称服务不可注册。
 func TestLifecycleRegisterEmptyServiceName(t *testing.T) {
-	lc := NewLifeCycle()
+	lc := NewLifecycle()
 
 	err := lc.Register(&stubService{})
 	if !errors.Is(err, ErrEmptyServiceName) {
@@ -84,7 +98,7 @@ func TestLifecycleRegisterEmptyServiceName(t *testing.T) {
 
 // TestLifecycleRegisterDuplicateServiceName 验证同名服务不能重复注册。
 func TestLifecycleRegisterDuplicateServiceName(t *testing.T) {
-	lc := NewLifeCycle()
+	lc := NewLifecycle()
 
 	if err := lc.Register(&stubService{name: "same"}); err != nil {
 		t.Fatalf("register first service: %v", err)
@@ -98,7 +112,7 @@ func TestLifecycleRegisterDuplicateServiceName(t *testing.T) {
 
 // TestLifecycleRegisterAfterLoad 验证加载完成后不能继续注册服务。
 func TestLifecycleRegisterAfterLoad(t *testing.T) {
-	lc := NewLifeCycle()
+	lc := NewLifecycle()
 	ctx := context.Background()
 
 	if err := lc.Register(&stubService{name: "loaded"}); err != nil {
@@ -108,15 +122,84 @@ func TestLifecycleRegisterAfterLoad(t *testing.T) {
 		t.Fatalf("load lifecycle: %v", err)
 	}
 
-	err := lc.Register(&stubService{name: "late"})
+	err := lc.Register(&stubService{name: "late1"}, &stubService{name: "late2"})
 	if !errors.Is(err, ErrLifecycleLoaded) {
 		t.Fatalf("expected ErrLifecycleLoaded, got %v", err)
 	}
 }
 
+// TestLifecycleRegisterStopsAtNilAndKeepsPreviousServices 验证批量注册遇到 nil 时停止，前面成功的服务会保留。
+func TestLifecycleRegisterStopsAtNilAndKeepsPreviousServices(t *testing.T) {
+	lc := NewLifecycle()
+
+	first := &stubService{name: "first"}
+	third := &stubService{name: "third"}
+
+	err := lc.Register(first, nil, third)
+	if !errors.Is(err, ErrNilService) {
+		t.Fatalf("expected ErrNilService, got %v", err)
+	}
+
+	if got := len(lc.services); got != 1 {
+		t.Fatalf("expected 1 registered service, got %d", got)
+	}
+	if lc.services[0] != first {
+		t.Fatal("expected first service to be kept")
+	}
+	if _, ok := lc.index[third.name]; ok {
+		t.Fatal("expected third service not to be registered")
+	}
+}
+
+// TestLifecycleRegisterStopsAtDuplicateAndKeepsPreviousServices 验证批量注册遇到重名服务时停止，前面成功的服务会保留。
+func TestLifecycleRegisterStopsAtDuplicateAndKeepsPreviousServices(t *testing.T) {
+	lc := NewLifecycle()
+
+	first := &stubService{name: "first"}
+	second := &stubService{name: "second"}
+	dup := &stubService{name: "first"}
+
+	err := lc.Register(first, second, dup)
+	if !errors.Is(err, ErrDuplicateServiceName) {
+		t.Fatalf("expected ErrDuplicateServiceName, got %v", err)
+	}
+
+	if got := len(lc.services); got != 2 {
+		t.Fatalf("expected 2 registered services, got %d", got)
+	}
+	if lc.services[0] != first || lc.services[1] != second {
+		t.Fatal("expected successfully registered services to be kept in order")
+	}
+}
+
+// TestLifecycleRegisterSecondBatchStopsAtDuplicate 验证后续批量注册遇到重名服务时，当前批次前面成功的服务仍会保留。
+func TestLifecycleRegisterSecondBatchStopsAtDuplicate(t *testing.T) {
+	lc := NewLifecycle()
+
+	first := &stubService{name: "first"}
+	second := &stubService{name: "second"}
+	firstDup := &stubService{name: "first"}
+
+	if err := lc.Register(first); err != nil {
+		t.Fatalf("register first service: %v", err)
+	}
+
+	err := lc.Register(second, firstDup)
+	if !errors.Is(err, ErrDuplicateServiceName) {
+		t.Fatalf("expected ErrDuplicateServiceName, got %v", err)
+	}
+
+	if got := len(lc.services); got != 2 {
+		t.Fatalf("expected 2 registered services, got %d", got)
+	}
+	if lc.services[0] != first || lc.services[1] != second {
+		t.Fatal("expected second batch to keep successfully registered services before the error")
+	}
+}
+
 // TestLifecycleLoadOrderAndIdempotent 验证加载顺序和 Load 的幂等行为。
 func TestLifecycleLoadOrderAndIdempotent(t *testing.T) {
-	lc := NewLifeCycle()
+	lc := NewLifecycle()
 	ctx := context.Background()
 
 	var calls []string
@@ -157,7 +240,7 @@ func TestLifecycleLoadOrderAndIdempotent(t *testing.T) {
 
 // TestLifecycleLoadFailureRollsBackInReverse 验证加载失败时会按逆序回滚。
 func TestLifecycleLoadFailureRollsBackInReverse(t *testing.T) {
-	lc := NewLifeCycle()
+	lc := NewLifecycle()
 	ctx := context.Background()
 
 	var calls []string
@@ -217,7 +300,7 @@ func TestLifecycleLoadFailureRollsBackInReverse(t *testing.T) {
 
 // TestLifecycleLoadFailureCanRetry 验证加载失败回滚后可以再次重试加载。
 func TestLifecycleLoadFailureCanRetry(t *testing.T) {
-	lc := NewLifeCycle()
+	lc := NewLifecycle()
 	ctx := context.Background()
 
 	attempt := 0
@@ -268,7 +351,7 @@ func TestLifecycleLoadFailureCanRetry(t *testing.T) {
 
 // TestLifecycleUnloadReverseAndIdempotent 验证卸载顺序和 Unload 的幂等行为。
 func TestLifecycleUnloadReverseAndIdempotent(t *testing.T) {
-	lc := NewLifeCycle()
+	lc := NewLifecycle()
 	ctx := context.Background()
 
 	var calls []string
@@ -320,7 +403,7 @@ func TestLifecycleUnloadReverseAndIdempotent(t *testing.T) {
 
 // TestLifecycleUnloadContinuesAndReturnsJoinedError 验证卸载会继续执行并聚合错误。
 func TestLifecycleUnloadContinuesAndReturnsJoinedError(t *testing.T) {
-	lc := NewLifeCycle()
+	lc := NewLifecycle()
 	ctx := context.Background()
 
 	var calls []string
@@ -378,7 +461,7 @@ func TestLifecycleUnloadContinuesAndReturnsJoinedError(t *testing.T) {
 
 // TestLifecycleLoadReturnsJoinedRollbackError 验证加载失败时会返回回滚错误。
 func TestLifecycleLoadReturnsJoinedRollbackError(t *testing.T) {
-	lc := NewLifeCycle()
+	lc := NewLifecycle()
 	ctx := context.Background()
 
 	loadErr := errors.New("load failed")
@@ -421,7 +504,7 @@ func TestLifecycleLoadReturnsJoinedRollbackError(t *testing.T) {
 
 // TestLifecycleErrorsContainServiceName 验证错误信息中包含服务名称，便于定位问题。
 func TestLifecycleErrorsContainServiceName(t *testing.T) {
-	lc := NewLifeCycle()
+	lc := NewLifecycle()
 	ctx := context.Background()
 
 	loadErr := errors.New("boom")
