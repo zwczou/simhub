@@ -1,0 +1,7 @@
+interface:
+  display_name: "gRPC Service Dev"
+  short_description: "Build or update gRPC services and methods"
+  default_prompt: "Use $grpc-service-dev to implement or modify a gRPC service or gRPC method."
+
+policy:
+  allow_implicit_invocation: true

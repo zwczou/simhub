@@ -1,0 +1,7 @@
+interface:
+  display_name: "Library Dev"
+  short_description: "Build or update shared Go libraries in simhub"
+  default_prompt: "Use $library-dev to implement or modify a shared library under pkg/ or internal/."
+
+policy:
+  allow_implicit_invocation: true
