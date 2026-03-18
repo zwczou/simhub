@@ -1,6 +1,6 @@
 ---
 name: library-dev
-description: Use when adding or modifying reusable Go libraries and utility code, especially under pkg/ or internal/. This skill fits tasks such as shared Redis locks, helpers, wrappers, or common infrastructure code. Do not use it for gRPC service or gRPC method implementation.
+description: Use when adding or modifying reusable Go libraries and utility code, especially under pkg/ or internal/. This skill fits library development and library maintenance tasks such as locks, helpers, wrappers, utilities, or common infrastructure code. Do not use it for gRPC service or gRPC method implementation.
 ---
 
 # Library Dev
@@ -8,13 +8,13 @@ description: Use when adding or modifying reusable Go libraries and utility code
 ## Overview
 
 Use this skill for shared library work in `pkg/` and `internal/`.
-Prefer the existing project style, keep the change set minimal, and avoid introducing new patterns unless the repository already uses them.
+Prefer the existing project style, keep the change set minimal, and avoid introducing new patterns unless nearby code already uses them.
 
 ## Use This Skill
 
-- Adding a reusable library in `pkg/` or `internal/`
-- Modifying an existing shared library
-- Implementing common helpers such as Redis-based utilities, wrappers, or internal support code
+- Writing a new library in `pkg/` or `internal/`
+- Modifying an existing library
+- Implementing helpers, wrappers, utilities, or internal support code
 
 ## Do Not Use This Skill
 
@@ -24,13 +24,14 @@ Prefer the existing project style, keep the change set minimal, and avoid introd
 
 ## Workflow
 
-1. Read the current repository version and release conventions first, including `go.mod` and the local project instructions.
-2. If the target library already exists, read the current implementation and tests before changing it.
-3. Reuse the style of nearby libraries first. Inspect similar code under `pkg/` or `internal/` before inventing a new shape.
+1. Confirm the requirement first and make sure the task is clear. If important details are unclear, ask targeted follow-up questions.
+2. If the library already exists, read the current implementation and tests first to understand the existing behavior.
+3. If the library does not exist yet, read other libraries in the same directory first and follow their style.
 4. Make only the minimum change required to complete the task. Do not do unrelated refactors, renames, or dependency swaps.
-5. If the project already has a unified error style, keep using it. Do not introduce a new error model.
-6. If tests already exist, extend them first. If the change is testable and the package has a test pattern, add or update tests.
-7. After implementation, run `go test` for the touched package first, then follow the repository-level validation requirements.
+5. Implement the library files needed for the task.
+6. Shared sentinel errors may live in `errors.go` when that improves reuse and consistency.
+7. `WithXxx` option helpers may live in `options.go` when the library has optional configuration.
+8. Add thorough tests for the new or changed behavior.
 
 ## Library Rules
 
@@ -41,6 +42,7 @@ Prefer the existing project style, keep the change set minimal, and avoid introd
 - If a shared library depends on the database, accept `bun.IDB`.
 - Keep logging consistent with the repository style. Use `zerolog/log`, snake_case log keys, and lowercase English in `.Msg(...)`.
 - For reusable sentinel errors such as `ErrNotFound`, declare them in `errors.go` instead of rebuilding the same error string repeatedly.
+- Keep function comments in Chinese when the project expects function comments.
 
 ## Error Handling
 
@@ -50,8 +52,8 @@ Prefer the existing project style, keep the change set minimal, and avoid introd
 
 ## Validation
 
+- Add or update complete tests for the library behavior you changed.
 - Prefer the narrowest test command for the changed package, for example `go test ./pkg/xxx` or `go test ./internal/xxx`.
-- If the task also changes broader application code, finish with the repository-required validation commands.
 
 ## Output
 

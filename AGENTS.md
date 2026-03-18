@@ -15,6 +15,7 @@ Prefer the narrowest validation that matches the change first. After any code ch
 - Use `golang + grpc + grpc-gateway` for service and gateway workflows.
 - Use `bun` as the database ORM.
 - Use `redis/go-redis/v9` for Redis access.
+- Use `go-json` instead of the standard `encoding/json` package.
 - In shared libraries that depend on Redis, use the `redis.UniversalClient` interface.
 - In shared libraries that depend on the database, use the `bun.IDB` interface.
 - Use `github.com/rs/zerolog/log` for logging.
@@ -34,6 +35,10 @@ Prefer the narrowest validation that matches the change first. After any code ch
 - Use strict CamelCase consistently instead of abbreviation-style uppercase names.
 - If writing shared libraries under `pkg/xxx`, optional configuration should use the `WithXxx` pattern.
 - Functions should have comments, and function comments should be written in Chinese.
+- Treat function comments as a hard requirement, not an optional cleanup item.
+- Every newly added or modified function, including unexported helpers, must have a Chinese comment.
+- For long functions or functions with multiple branches/stages, add short Chinese comments at key logic nodes so the control flow is easy to scan.
+- Before finishing, check touched files for missing function comments and fill them in instead of leaving them for follow-up.
 
 ## Protobuf Style
 
