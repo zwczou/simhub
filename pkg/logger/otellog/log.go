@@ -35,7 +35,7 @@ func (l *Logger) Info(level int, msg string, keysAndValues ...any) {
 	if !l.Enabled(level) {
 		return
 	}
-	if !viper.GetBool("log.traced") {
+	if !viper.GetBool("log.otel.traced") {
 		return
 	}
 	logger := l.logger.Info()
