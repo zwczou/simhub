@@ -1,0 +1,78 @@
+mode: "debug"
+name: "gamed"
+zone: "UTC"
+services:
+ - "gp.user"
+ - "gp.man"
+
+grpc:
+  enabled: true
+  addr: ":6677"
+
+http:
+  enabled: true
+  addr: ":6678"
+
+log:
+  format: "console"
+  level: "debug"
+  length: 2048
+  otel:
+    traced: true # 打印日志
+  sql:
+    traced: true # 打印日志
+    max_query_length: 1024 # 打印日志的SQL最大长度，超过则截断
+
+static:
+  dir: "./static"
+  prefix: "/static/"
+
+fixture:
+  dir: "./testdata"
+
+token:
+  man:
+    tokenttl: "10h"
+    refreshttl: "168h"
+  user:
+    tokenttl: "4h"
+    refreshttl: "168h"
+
+captcha:
+  hourly_count: 5
+  daily_count: 50
+
+auth:
+  whitelists:
+    - "/v1/pow/challenge"
+    - "/v1/auth/login"
+    - "/v1/auth/refresh"
+    - "/v1/auth/reset-password"
+    - "/v1/captcha/send"
+    - "/v1/captcha/check"
+
+pow:
+  difficulty_base: 18
+  difficulty_max_bonus: 5
+  expires_in: "10m"
+
+email:
+  whitelists:
+    - "email.debug"
+    - "qq.com"
+    - "163.com"
+    - "126.com"
+    - "sina.com"
+    - "sohu.com"
+    - "aliyun.com"
+    - "foxmail.com"
+    - "gmail.com"
+    - "outlook.com"
+    - "hotmail.com"
+    - "live.com"
+    - "icloud.com"
+    - "yahoo.com"
+    - "protonmail.com"
+    - "mail.com"
+  domain_hour_limit: 10   # 每小时单域名注册上限
+  domain_day_limit: 30    # 每天单域名注册上限

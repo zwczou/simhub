@@ -1,0 +1,25 @@
+trace:
+  enabled: false
+  endpoint: "http://127.0.0.1:9529/otel/v1/trace"
+
+registry:
+  enabled: false
+
+redis:
+  default:
+    addr: "127.0.0.1:6379"
+    pool_size: 40
+    dbs: [0]
+  token:
+    addr: "127.0.0.1:6379"
+    pool_size: 40
+    dbs: [0]
+  websocket:
+    addr: "127.0.0.1:6379"
+    pool_size: 40
+    dbs: [0]
+
+database:
+  default:
+    dsn: "postgres://icenet:Icenet(321)@localhost:5432/test?sslmode=disable"
+    slow: "200ms"
