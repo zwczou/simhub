@@ -14,6 +14,7 @@ import (
 
 	json "github.com/goccy/go-json"
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog/log"
 )
 
 var (
@@ -49,11 +50,13 @@ type Registry struct {
 
 // Lease 表示一个正在续期的注册实例。
 type Lease struct {
-	key    string
-	rdb    redis.UniversalClient
-	stopCh chan struct{}
-	once   sync.Once
-	doneCh chan struct{}
+	key              string
+	indexKey         string
+	rdb              redis.UniversalClient
+	operationTimeout time.Duration
+	stopCh           chan struct{}
+	once             sync.Once
+	doneCh           chan struct{}
 }
 
 // NewRegistry 创建 Registry。
@@ -82,15 +85,18 @@ func (r *Registry) Register(ctx context.Context, req Registration) (*Lease, Endp
 	if err != nil {
 		return nil, Endpoint{}, err
 	}
-	if err = r.upsert(ctx, key, ep); err != nil {
+	indexKey := r.indexKey(req.ServiceName)
+	if err = r.upsert(ctx, key, indexKey, ep); err != nil {
 		return nil, Endpoint{}, err
 	}
 
 	lease := &Lease{
-		key:    key,
-		rdb:    r.rdb,
-		stopCh: make(chan struct{}),
-		doneCh: make(chan struct{}),
+		key:              key,
+		indexKey:         indexKey,
+		rdb:              r.rdb,
+		operationTimeout: r.opt.operationTimeout,
+		stopCh:           make(chan struct{}),
+		doneCh:           make(chan struct{}),
 	}
 	go r.keepAlive(ctx, lease, ep)
 	return lease, ep, nil
@@ -103,8 +109,7 @@ func (r *Registry) Discover(ctx context.Context, serviceName string) ([]Endpoint
 		return nil, ErrServiceNameRequired
 	}
 
-	pattern := r.servicePattern(serviceName)
-	keys, err := r.rdb.Keys(ctx, pattern).Result()
+	keys, err := r.rdb.SMembers(ctx, r.indexKey(serviceName)).Result()
 	if err != nil {
 		return nil, err
 	}
@@ -118,22 +123,30 @@ func (r *Registry) Discover(ctx context.Context, serviceName string) ([]Endpoint
 	}
 
 	endpoints := make([]Endpoint, 0, len(values))
-	for _, raw := range values {
+	staleKeys := make([]string, 0)
+	for i, raw := range values {
 		if raw == nil {
+			staleKeys = append(staleKeys, keys[i])
 			continue
 		}
 		str, ok := raw.(string)
 		if !ok {
+			staleKeys = append(staleKeys, keys[i])
 			continue
 		}
 		var ep Endpoint
 		if err = json.Unmarshal([]byte(str), &ep); err != nil {
+			staleKeys = append(staleKeys, keys[i])
 			continue
 		}
-		if ep.ServiceName == serviceName && ep.Ip != "" && ep.GrpcPort > 0 {
-			endpoints = append(endpoints, ep)
+		if ep.ServiceName != serviceName || ep.Ip == "" || ep.GrpcPort <= 0 {
+			staleKeys = append(staleKeys, keys[i])
+			continue
 		}
+		endpoints = append(endpoints, ep)
 	}
+
+	r.cleanupStaleKeys(ctx, serviceName, staleKeys)
 
 	sort.Slice(endpoints, func(i, j int) bool {
 		return endpoints[i].InstanceId < endpoints[j].InstanceId
@@ -150,7 +163,17 @@ func (l *Lease) Stop(ctx context.Context) error {
 	if l.rdb == nil || l.key == "" {
 		return nil
 	}
-	return l.rdb.Del(ctx, l.key).Err()
+	opCtx, cancel := withOperationTimeout(ctx, l.operationTimeout)
+	defer cancel()
+
+	_, err := l.rdb.TxPipelined(opCtx, func(pipe redis.Pipeliner) error {
+		pipe.Del(opCtx, l.key)
+		if l.indexKey != "" {
+			pipe.SRem(opCtx, l.indexKey, l.key)
+		}
+		return nil
+	})
+	return err
 }
 
 // buildEndpoint 组装注册信息并返回对应的 Redis key。
@@ -222,18 +245,36 @@ func (r *Registry) keepAlive(ctx context.Context, lease *Lease, endpoint Endpoin
 			return
 		case <-ticker.C:
 			endpoint.UpdatedAt = time.Now().Unix()
-			_ = r.upsert(context.Background(), lease.key, endpoint)
+			heartbeatCtx, cancel := withOperationTimeout(context.Background(), r.opt.operationTimeout)
+			err := r.upsert(heartbeatCtx, lease.key, lease.indexKey, endpoint)
+			cancel()
+			if err != nil {
+				log.Ctx(ctx).
+					Warn().
+					Err(err).
+					Str("service_name", endpoint.ServiceName).
+					Str("instance_id", endpoint.InstanceId).
+					Msg("redlb keepalive failed")
+			}
 		}
 	}
 }
 
 // upsert 把实例信息写入 Redis 并设置过期时间。
-func (r *Registry) upsert(ctx context.Context, key string, endpoint Endpoint) error {
+func (r *Registry) upsert(ctx context.Context, key string, indexKey string, endpoint Endpoint) error {
 	body, err := json.Marshal(endpoint)
 	if err != nil {
 		return err
 	}
-	return r.rdb.Set(ctx, key, body, r.opt.ttl).Err()
+	_, err = r.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+		pipe.Set(ctx, key, body, r.opt.ttl)
+		if indexKey != "" {
+			pipe.SAdd(ctx, indexKey, key)
+			pipe.PExpire(ctx, indexKey, r.opt.ttl)
+		}
+		return nil
+	})
+	return err
 }
 
 // serviceKey 返回单个实例的 Redis key。
@@ -241,9 +282,9 @@ func (r *Registry) serviceKey(serviceName, instanceId string) string {
 	return fmt.Sprintf("%s:%s:%s", r.opt.prefix, serviceName, instanceId)
 }
 
-// servicePattern 返回服务实例 key 的匹配模式。
-func (r *Registry) servicePattern(serviceName string) string {
-	return fmt.Sprintf("%s:%s:*", r.opt.prefix, serviceName)
+// indexKey 返回服务实例索引的 Redis key。
+func (r *Registry) indexKey(serviceName string) string {
+	return fmt.Sprintf("%s:index:%s", r.opt.prefix, serviceName)
 }
 
 // splitHostPortPort 从监听地址中提取端口。
@@ -276,4 +317,40 @@ func splitHostPortPort(addr string) (int, error) {
 // normalizeServiceName 归一化服务名。
 func (r *Registry) normalizeServiceName(serviceName string) string {
 	return strings.TrimSpace(serviceName)
+}
+
+// cleanupStaleKeys 尝试从索引集合中移除已经失效的实例 key。
+func (r *Registry) cleanupStaleKeys(ctx context.Context, serviceName string, keys []string) {
+	if len(keys) == 0 {
+		return
+	}
+
+	if err := r.rdb.SRem(ctx, r.indexKey(serviceName), stringSliceToAny(keys)...).Err(); err != nil {
+		log.Ctx(ctx).
+			Warn().
+			Err(err).
+			Str("service_name", serviceName).
+			Int("stale_key_count", len(keys)).
+			Msg("redlb cleanup stale keys failed")
+	}
+}
+
+// withOperationTimeout 为 Redis 后台操作补上统一超时控制。
+func withOperationTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if timeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+// stringSliceToAny 将字符串切片转换为 Redis 可接受的可变参数切片。
+func stringSliceToAny(values []string) []any {
+	items := make([]any, 0, len(values))
+	for _, value := range values {
+		items = append(items, value)
+	}
+	return items
 }

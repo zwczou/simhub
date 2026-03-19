@@ -7,12 +7,14 @@ type options struct {
 	prefix            string
 	ttl               time.Duration
 	heartbeatInterval time.Duration
+	operationTimeout  time.Duration
 }
 
 var defaultOptions = options{
 	prefix:            "redlb:service",
 	ttl:               12 * time.Second,
 	heartbeatInterval: 4 * time.Second,
+	operationTimeout:  time.Second,
 }
 
 // Option 用于配置 Registry。
@@ -41,6 +43,15 @@ func WithHeartbeatInterval(interval time.Duration) Option {
 	return func(o *options) {
 		if interval > 0 {
 			o.heartbeatInterval = interval
+		}
+	}
+}
+
+// WithOperationTimeout 设置后台 Redis 操作的超时时间。
+func WithOperationTimeout(timeout time.Duration) Option {
+	return func(o *options) {
+		if timeout > 0 {
+			o.operationTimeout = timeout
 		}
 	}
 }

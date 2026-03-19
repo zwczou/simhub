@@ -11,6 +11,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// TestSplitHostPortPort 验证监听地址解析逻辑。
 func TestSplitHostPortPort(t *testing.T) {
 	t.Parallel()
 
@@ -49,6 +50,7 @@ func TestSplitHostPortPort(t *testing.T) {
 	}
 }
 
+// TestRegisterDiscoverAndStop 验证注册、发现、续期与停止会同步维护索引。
 func TestRegisterDiscoverAndStop(t *testing.T) {
 	t.Parallel()
 
@@ -61,6 +63,7 @@ func TestRegisterDiscoverAndStop(t *testing.T) {
 		WithPrefix("test:redlb"),
 		WithTtl(3*time.Second),
 		WithHeartbeatInterval(300*time.Millisecond),
+		WithOperationTimeout(500*time.Millisecond),
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -95,12 +98,15 @@ func TestRegisterDiscoverAndStop(t *testing.T) {
 		t.Fatalf("Discover() len=%d, want 1", len(eps))
 	}
 
+	endpointKey := reg.serviceKey("user.service", ep.InstanceId)
+	indexKey := reg.indexKey("user.service")
+
 	keys := mr.Keys()
-	if len(keys) != 1 {
-		t.Fatalf("redis keys=%d, want 1", len(keys))
+	if len(keys) != 2 {
+		t.Fatalf("redis keys=%d, want 2", len(keys))
 	}
 
-	raw, err := rdb.Get(context.Background(), keys[0]).Result()
+	raw, err := rdb.Get(context.Background(), endpointKey).Result()
 	if err != nil {
 		t.Fatalf("redis get error: %v", err)
 	}
@@ -112,19 +118,90 @@ func TestRegisterDiscoverAndStop(t *testing.T) {
 		t.Fatalf("stored hostname=%q, want node-a", stored.Hostname)
 	}
 
+	members, err := rdb.SMembers(context.Background(), indexKey).Result()
+	if err != nil {
+		t.Fatalf("read index members error: %v", err)
+	}
+	if len(members) != 1 || members[0] != endpointKey {
+		t.Fatalf("index members=%v, want [%s]", members, endpointKey)
+	}
+
 	time.Sleep(1200 * time.Millisecond)
-	if !mr.Exists(keys[0]) {
-		t.Fatalf("key %q expired unexpectedly, heartbeat not working", keys[0])
+	if !mr.Exists(endpointKey) {
+		t.Fatalf("key %q expired unexpectedly, heartbeat not working", endpointKey)
+	}
+	if !mr.Exists(indexKey) {
+		t.Fatalf("index key %q expired unexpectedly, heartbeat not working", indexKey)
 	}
 
 	if err = lease.Stop(context.Background()); err != nil {
 		t.Fatalf("lease stop error: %v", err)
 	}
-	if mr.Exists(keys[0]) {
-		t.Fatalf("key %q should be deleted after Stop", keys[0])
+	if mr.Exists(endpointKey) {
+		t.Fatalf("key %q should be deleted after Stop", endpointKey)
+	}
+
+	members, err = rdb.SMembers(context.Background(), indexKey).Result()
+	if err != nil && err != redis.Nil {
+		t.Fatalf("read index members after stop error: %v", err)
+	}
+	if len(members) != 0 {
+		t.Fatalf("index members after stop=%v, want empty", members)
 	}
 }
 
+// TestDiscoverCleansStaleMembers 验证发现流程会清理失效索引成员。
+func TestDiscoverCleansStaleMembers(t *testing.T) {
+	t.Parallel()
+
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	reg := NewRegistry(
+		rdb,
+		WithPrefix("test:redlb"),
+		WithTtl(3*time.Second),
+		WithHeartbeatInterval(300*time.Millisecond),
+	)
+
+	lease, ep, err := reg.Register(context.Background(), Registration{
+		ServiceName: "clean.service",
+		InstanceId:  "node-1",
+		Ip:          "10.10.0.9",
+		Hostname:    "node-clean",
+		GrpcAddr:    ":9988",
+		HttpAddr:    ":9989",
+	})
+	if err != nil {
+		t.Fatalf("register error: %v", err)
+	}
+	defer func() { _ = lease.Stop(context.Background()) }()
+
+	indexKey := reg.indexKey("clean.service")
+	staleKey := "test:redlb:clean.service:stale"
+	if err := rdb.SAdd(context.Background(), indexKey, staleKey).Err(); err != nil {
+		t.Fatalf("seed stale member error: %v", err)
+	}
+
+	eps, err := reg.Discover(context.Background(), "clean.service")
+	if err != nil {
+		t.Fatalf("discover error: %v", err)
+	}
+	if len(eps) != 1 || eps[0].InstanceId != ep.InstanceId {
+		t.Fatalf("discover endpoints=%+v, want only %s", eps, ep.InstanceId)
+	}
+
+	members, err := rdb.SMembers(context.Background(), indexKey).Result()
+	if err != nil {
+		t.Fatalf("read index members error: %v", err)
+	}
+	if len(members) != 1 || members[0] != reg.serviceKey("clean.service", ep.InstanceId) {
+		t.Fatalf("index members after cleanup=%v", members)
+	}
+}
+
+// TestRegisterHostnameFallback 验证主机名会在缺失时回退到本机。
 func TestRegisterHostnameFallback(t *testing.T) {
 	t.Parallel()
 
@@ -156,6 +233,7 @@ func TestRegisterHostnameFallback(t *testing.T) {
 	}
 }
 
+// TestRegisterRequiresServiceName 验证服务名为空时会报错。
 func TestRegisterRequiresServiceName(t *testing.T) {
 	t.Parallel()
 
@@ -169,6 +247,7 @@ func TestRegisterRequiresServiceName(t *testing.T) {
 	}
 }
 
+// TestRegisterRequiresIp 验证注册缺少 IP 时会报错。
 func TestRegisterRequiresIp(t *testing.T) {
 	t.Parallel()
 
@@ -182,6 +261,7 @@ func TestRegisterRequiresIp(t *testing.T) {
 	}
 }
 
+// TestRegisterRequiresGrpcAddr 验证注册缺少 gRPC 地址时会报错。
 func TestRegisterRequiresGrpcAddr(t *testing.T) {
 	t.Parallel()
 

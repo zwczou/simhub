@@ -93,7 +93,10 @@ func (r *grpcResolver) watch() {
 
 // refresh 拉取最新实例并更新到 gRPC 连接状态。
 func (r *grpcResolver) refresh() {
-	endpoints, err := r.registry.Discover(context.Background(), r.serviceName)
+	ctx, cancel := withOperationTimeout(context.Background(), r.registry.opt.operationTimeout)
+	defer cancel()
+
+	endpoints, err := r.registry.Discover(ctx, r.serviceName)
 	if err != nil {
 		r.cc.ReportError(err)
 		return
