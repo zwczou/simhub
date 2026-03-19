@@ -4,11 +4,13 @@ go 1.26.1
 
 require (
 	github.com/alicebob/miniredis/v2 v2.37.0
+	github.com/go-logr/logr v1.4.3
 	github.com/goccy/go-json v0.10.5
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/rs/zerolog v1.34.0
-	github.com/spf13/cast v1.10.0
 	github.com/spf13/viper v1.21.0
+	github.com/tidwall/gjson v1.18.0
+	github.com/tidwall/sjson v1.2.5
 	github.com/uptrace/bun v1.2.18
 	google.golang.org/grpc v1.79.2
 )
@@ -26,8 +28,11 @@ require (
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
+	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/tmthrgd/go-hex v0.0.0-20190904060850-447a3041c3bc // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
@@ -36,4 +41,5 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
+	google.golang.org/protobuf v1.36.10 // indirect
 )
