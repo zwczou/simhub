@@ -34,6 +34,7 @@ func New(opts *option) *simServer {
 	}
 }
 
+// Main 启动 simd 服务并加载已注册的生命周期组件。
 func (s *simServer) Main() {
 	err := s.init()
 	if err != nil {
@@ -44,6 +45,7 @@ func (s *simServer) Main() {
 	s.boot.Load(context.Background())
 }
 
+// Exit 停止 simd 服务并释放进程内持有的基础设施资源。
 func (s *simServer) Exit() {
 	start := time.Now()
 
@@ -53,15 +55,19 @@ func (s *simServer) Exit() {
 	// 关闭API服务，此时API返回维护中错误
 	s.isClosed.Store(true)
 
-	s.boot.Unload(context.Background())
-	spent := time.Since(start).Seconds() * 1e3
-	log.Info().Float64("spent", spent).Msg("server exited")
+	if err := s.boot.Unload(context.Background()); err != nil {
+		log.Error().Err(err).Msg("unload failed")
+	}
 
 	// 在等待一会儿，确保所有的请求都处理完毕
 	time.Sleep(time.Millisecond * 200)
 
-	// 关闭redis连接
-	for _, rdb := range s.rdbs.Items() {
-		rdb.Close()
+	// 在服务完全下线后，再做最终资源清理。
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.boot.Shutdown(shutdownCtx); err != nil {
+		log.Error().Err(err).Msg("shutdown failed")
 	}
+
+	log.Info().Dur("spent", time.Since(start)).Msg("server exited")
 }

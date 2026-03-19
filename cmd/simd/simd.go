@@ -18,6 +18,7 @@ var (
 	versionInfo bool
 )
 
+// main 是 simd 服务的命令行入口。
 func main() {
 	flag.BoolVar(&versionInfo, "v", false, "显示版本信息")
 	flag.StringVar(&cfgName, "cfg", "", "配置文件路径")
