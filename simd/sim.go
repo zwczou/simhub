@@ -27,7 +27,7 @@ type simServer struct {
 func New(opts *option) *simServer {
 	return &simServer{
 		opts:     opts,
-		boot:     boot.NewBoot(),
+		boot:     boot.GetBoot(),
 		dbs:      boot.NewDbStore(),
 		rdbs:     boot.NewRedisStore(),
 		exitChan: make(chan struct{}),
