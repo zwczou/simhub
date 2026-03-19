@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+option go_package = "github.com/iot/simhub/apis/basepb";
+
+package basepb;
+
+
+// Error 错误信息
+message Error {
+  uint32 code = 1;
+  string message = 2;
+}
+
+// Code 错误码
+enum Code {
+  CODE_UNSPECIFIED = 0;
+
+  // 通用错误码
+  CODE_NOT_FOUND = 11001; // 路径不存在
+  CODE_METHOD_NOT_ALLOWED = 11002; // 方法不允许
+  CODE_INTERNAL_SERVER = 11003; // 服务器内部错误
+  CODE_UNAUTHORIZED = 11004; // 未授权
+  CODE_WAIT_OTP = 11005; // 等待OTP
+  CODE_FORBIDDEN = 11006; // 禁止访问
+  CODE_RATE_LIMIT = 11007; // 限流
+  CODE_ILLEGAL_ACCESS = 11008; // 非法访问
+  CODE_DATABASE = 11009; // 数据库错误
+  CODE_MAINTENANCE = 11010; // 系统维护中
+  CODE_ARGUMENT = 11011; // 参数错误
+                         //
+  // 用户相关, 210开头
+  CODE_USER_NOT_FOUND = 21001; // 用户不存在
+  CODE_USER_OR_PASSWORD = 21002; // 用户名或密码错误
+  CODE_USER_IS_DISABLED = 21003; // 用户被禁用
+  CODE_USER_IS_TERMINATED = 21004; // 用户被终止
+  CODE_NICKNAME_DUPLICATED = 21005; // 昵称已被使用
+  CODE_NICKNAME_ALREADY_CHANGED = 21006; // 昵称已经修改过
+  CODE_NICKNAME_LENGTH_INVALID = 21007; // 昵称长度不符合要求
+  CODE_PASSWORD_INCORRECT = 21008; // 密码不正确
+  CODE_ACCOUNT_MISMATCH = 21009; // 账号不匹配
+
+  CODE_REFRESH_TOKEN_INVALID = 21011; // 刷新令牌无效
+  CODE_REGISTER_HIGH_RISK = 21012; // 高风险
+  CODE_POW_CHALLENGE_NOT_FOUND = 21013; // 工作证明的challenge不存在
+  CODE_POW_NONCE_INVALID = 21014; // 工作证明的nonce有误
+  CODE_EMAIL_DOMAIN_BLOCKED = 21015; // 邮箱后缀不支持注册
+  CODE_EMAIL_DOMAIN_RATE_LIMIT = 21016; // 邮箱后缀注册频率超限
+
+  // 验证码相关, 211
+  CODE_CAPTCHA_NOT_FOUND = 21101; // 验证码不存在
+  CODE_CAPTCHA_INVALID = 21102; // 验证码错误
+  CODE_CAPTCHA_EXPIRED = 21103; // 验证码过期
+  CODE_CAPTCHA_HOURLY_LIMIT = 21104; // 验证码发送小时超限
+  CODE_CAPTCHA_DAILY_LIMIT = 21105; // 验证码发送天超限
+  CODE_MESSAGE_SEND_FAILED = 21106; // 消息发送失败
+
+}

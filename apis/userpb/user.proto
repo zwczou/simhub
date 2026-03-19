@@ -1,0 +1,146 @@
+syntax = "proto3";
+
+import "apis/basepb/enum.proto";
+import "google/protobuf/empty.proto";
+import "google/api/annotations.proto";
+import "validate/validate.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+option go_package = "github.com/iot/simhub/apis/userpb";
+
+package userpb;
+
+service UserServer {
+    // GetChallenge 获取挑战
+    rpc GetChallenge(GetChallengeRequest) returns (GetChallengeResponse) {
+        option (google.api.http) = {
+            get: "/v1/pow/challenge"
+        };
+    }
+
+    // AuthLogin 认证登录
+    rpc AuthLogin(AuthLoginRequest) returns (AuthLoginResponse) {
+        option (google.api.http) = {
+            post: "/v1/auth/login"
+            body: "*"
+        };
+    }
+
+    // RefreshToken 刷新令牌
+    rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse) {
+        option (google.api.http) = {
+            post: "/v1/auth/refresh"
+            body: "*"
+        };
+    }
+
+    // AuthLogout 退出登录
+    rpc AuthLogout(google.protobuf.Empty) returns (google.protobuf.Empty) {
+        option (google.api.http) = {
+            post: "/v1/auth/logout"
+            body: "*"
+        };
+    }
+
+    // ResetPassword 重置密码
+    rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse) {
+        option (google.api.http) = {
+            post: "/v1/auth/reset-password"
+            body: "*"
+        };
+    }
+
+    // SendCaptcha 发送验证码
+    rpc SendCaptcha(SendCaptchaRequest) returns (SendCaptchaResponse) {
+        option (google.api.http) = {
+            post: "/v1/captcha/send"
+            body: "*"
+        };
+    }
+
+    // CheckCaptcha 检查验证码
+    rpc CheckCaptcha(CheckCaptchaRequest) returns (CheckCaptchaResponse) {
+        option (google.api.http) = {
+            post: "/v1/captcha/check"
+            body: "*"
+        };
+    }
+}
+
+message GetChallengeRequest {
+}
+
+message GetChallengeResponse {
+    string challenge = 1; // 挑战
+    uint32 difficulty = 2; // 难度，hash前N位为0
+    uint32 expires_in = 3; // 过期时间，单位秒
+}
+
+message AuthLoginRequest {
+    enum Scene {
+        SCENE_UNSPECIFIED = 0;
+        SCENE_LOGIN = 1;
+        SCENE_REGISTER = 2;
+    }
+
+    string challenge = 1 [(validate.rules).string = {min_len: 32, max_len: 32}]; // 挑战
+    string nonce = 2 [(validate.rules).string = {min_len: 32, max_len: 32}]; // 跟challenge配对的随机数
+    Scene scene = 3 [(validate.rules).enum.defined_only = true]; // 场景
+    int32 area_code = 4 [(validate.rules).int32 = {gte: 0, lte: 9999}]; // 区号
+    string account = 5 [(validate.rules).string = {min_len: 3, max_len: 64}]; // 账号
+    string password = 6 [(validate.rules).string = {ignore_empty: true, min_len: 6, max_len: 36}]; // 密码, 如果用验证码登录也是可以
+    int32 captcha = 7 [(validate.rules).int32 = {ignore_empty: true, gte: 100000, lte: 999999}]; // 验证码
+}
+
+message AuthLoginResponse {
+    bool is_register = 1; // 是否注册
+    string access_token = 2; // 访问令牌
+    string refresh_token = 3; // 刷新令牌
+    uint32 token_expires_in = 4; // 访问令牌过期时间，单位秒
+    uint32 refresh_expires_in = 5; // 刷新令牌过期时间，单位秒
+    string aes_key = 6; // AES 密钥 (混淆后)
+    string aes_iv = 7; // AES 向量 (混淆后)
+}
+
+message RefreshTokenRequest {
+    string refresh_token = 1 [(validate.rules).string = {min_len: 32, max_len: 32}]; // 刷新令牌
+}
+
+message RefreshTokenResponse {
+    string access_token = 1; // 访问令牌
+    string refresh_token = 2; // 刷新令牌
+    uint32 token_expires_in = 3; // 访问令牌过期时间，单位秒
+    uint32 refresh_expires_in = 4; // 刷新令牌过期时间，单位秒
+}
+
+message ResetPasswordRequest {
+    int32 area_code = 1 [(validate.rules).int32 = {gte: 0, lte: 9999}]; // 区号
+    string account = 2 [(validate.rules).string = {min_len: 3, max_len: 64}]; // 账号，邮箱或手机号
+    string password = 3 [(validate.rules).string = {min_len: 6, max_len: 36}]; // 新密码
+    int32 captcha = 4 [(validate.rules).int32 = {gte: 100000, lte: 999999}]; // 验证码
+}
+
+message ResetPasswordResponse {
+}
+
+
+message SendCaptchaRequest {
+    basepb.CaptchaTarget target = 1; // 目标
+    basepb.CaptchaScene scene = 2 [(validate.rules).enum.defined_only = true]; // 场景
+    int32 area_code = 3 [(validate.rules).int32 = {ignore_empty: true, gte: 0, lte: 9999}]; // 区号
+    string account = 4 [(validate.rules).string = {ignore_empty: true, min_len: 3, max_len: 64}]; // 账号，邮箱或手机号
+}
+
+message SendCaptchaResponse {
+}
+
+message CheckCaptchaRequest {
+    basepb.CaptchaTarget target = 1; // 目标
+    basepb.CaptchaScene scene = 2 [(validate.rules).enum.defined_only = true]; // 场景
+    int32 area_code = 3 [(validate.rules).int32 = {ignore_empty: true, gte: 0, lte: 9999}]; // 区号
+    string account = 4 [(validate.rules).string = {ignore_empty: true, min_len: 3, max_len: 64}]; // 账号，邮箱或手机号
+    int32 code = 5 [(validate.rules).int32 = {gte: 100000, lte: 999999}]; // 验证码
+}
+
+message CheckCaptchaResponse {
+}

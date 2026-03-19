@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+option go_package = "github.com/iot/simhub/apis/basepb";
+
+package basepb;
+
+message User {
+    enum Type {
+        TYPE_UNSPECIFIED = 0;
+        TYPE_USER = 1;
+        TYPE_ADMIN = 2;
+        TYPE_SUPER = 3;
+    }
+
+    enum Status {
+        STATUS_UNSPECIFIED = 0;
+        STATUS_NORMAL = 1; // 正常
+        STATUS_DISABLED = 2; // 禁用
+        STATUS_TERMINATED = 3; // 终止
+    }
+
+    enum VerifiedTags {
+        VERIFIED_TAGS_UNSPECIFIED = 0;
+        VERIFIED_TAGS_EMAIL = 1;
+        VERIFIED_TAGS_PHONE = 2;
+    }
+
+    enum Gender {
+        GENDER_UNSPECIFIED = 0;
+        GENDER_MALE = 1;
+        GENDER_FEMALE = 2;
+    }
+
+    enum Tag {
+        TAG_UNSPECIFIED = 0;
+        TAG_NICKNAME_CHANGED = 1; // 已经修改过昵称
+    }
+
+    enum RegType {
+      REG_TYPE_UNSPECIFIED = 0;
+      REG_TYPE_EMAIL = 1; // 邮箱注册
+      REG_TYPE_PHONE = 2; // 手机注册
+    }
+}
+
+message LoginLog {
+    enum Status {
+        STATUS_UNSPECIFIED = 0;
+        STATUS_SUCCESS = 1; // 成功
+        STATUS_FAIL = 2; // 失败
+    }
+}

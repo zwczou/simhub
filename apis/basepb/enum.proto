@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+option go_package = "github.com/iot/simhub/apis/basepb";
+
+package basepb;
+
+
+// CaptchaScene 验证码场景
+enum CaptchaScene {
+    SCENE_UNSPECIFIED = 0;
+    SCENE_LOGIN = 1; // 登录
+    SCENE_REGISTER = 2; // 注册
+    SCENE_RESET_PASSWORD = 3; // 重置密码
+}
+
+// CaptchaTarget 验证码发送目标
+enum CaptchaTarget {
+    TARGET_UNSPECIFIED = 0;
+    TARGET_INPUT = 1;        // 使用输入的 account/area_code
+    TARGET_EMAIL = 2; // 使用当前登录用户的 email
+    TARGET_PHONE = 3; // 使用当前登录用户的 phone
+}
