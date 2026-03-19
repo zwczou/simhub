@@ -525,3 +525,139 @@ func TestLifecycleErrorsContainServiceName(t *testing.T) {
 		t.Fatalf("expected error to contain service name, got %v", err)
 	}
 }
+
+// TestLifecycleAddShutdownNilHook 验证注册 nil 清理钩子会返回错误。
+func TestLifecycleAddShutdownNilHook(t *testing.T) {
+	lc := NewLifecycle()
+
+	err := lc.AddShutdown(nil)
+	if !errors.Is(err, ErrNilShutdownHook) {
+		t.Fatalf("expected ErrNilShutdownHook, got %v", err)
+	}
+}
+
+// TestLifecycleUnloadDoesNotRunShutdown 验证 Unload 不会执行清理钩子。
+func TestLifecycleUnloadDoesNotRunShutdown(t *testing.T) {
+	lc := NewLifecycle()
+	ctx := context.Background()
+
+	var calls []string
+	first := &stubService{
+		name: "first",
+		unloadFn: func(context.Context) error {
+			calls = append(calls, "unload:first")
+			return nil
+		},
+	}
+	second := &stubService{
+		name: "second",
+		unloadFn: func(context.Context) error {
+			calls = append(calls, "unload:second")
+			return nil
+		},
+	}
+
+	if err := lc.Register(first, second); err != nil {
+		t.Fatalf("register services: %v", err)
+	}
+	if err := lc.AddShutdown(
+		func(context.Context) error {
+			calls = append(calls, "shutdown:first")
+			return nil
+		},
+		func(context.Context) error {
+			calls = append(calls, "shutdown:second")
+			return nil
+		},
+	); err != nil {
+		t.Fatalf("add shutdown hooks: %v", err)
+	}
+
+	lc.loaded = true
+
+	if err := lc.Unload(ctx); err != nil {
+		t.Fatalf("unload lifecycle: %v", err)
+	}
+
+	want := []string{
+		"unload:second",
+		"unload:first",
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("expected calls %v, got %v", want, calls)
+	}
+}
+
+// TestLifecycleShutdownRunsHooksInReverse 验证 Shutdown 会按逆序执行清理钩子。
+func TestLifecycleShutdownRunsHooksInReverse(t *testing.T) {
+	lc := NewLifecycle()
+	ctx := context.Background()
+
+	var calls []string
+	if err := lc.AddShutdown(
+		func(context.Context) error {
+			calls = append(calls, "shutdown:first")
+			return nil
+		},
+		func(context.Context) error {
+			calls = append(calls, "shutdown:second")
+			return nil
+		},
+	); err != nil {
+		t.Fatalf("add shutdown hooks: %v", err)
+	}
+
+	if err := lc.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown lifecycle: %v", err)
+	}
+
+	want := []string{"shutdown:second", "shutdown:first"}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("expected calls %v, got %v", want, calls)
+	}
+}
+
+// TestLifecycleShutdownReturnsShutdownError 验证清理钩子错误会被聚合返回。
+func TestLifecycleShutdownReturnsShutdownError(t *testing.T) {
+	lc := NewLifecycle()
+	ctx := context.Background()
+
+	shutdownErr := errors.New("shutdown failed")
+	if err := lc.AddShutdown(func(context.Context) error {
+		return shutdownErr
+	}); err != nil {
+		t.Fatalf("add shutdown hook: %v", err)
+	}
+
+	lc.loaded = true
+
+	err := lc.Shutdown(ctx)
+	if !errors.Is(err, shutdownErr) {
+		t.Fatalf("expected shutdown error, got %v", err)
+	}
+}
+
+// TestLifecycleShutdownIsIdempotent 验证 Shutdown 重复调用只会执行一次。
+func TestLifecycleShutdownIsIdempotent(t *testing.T) {
+	lc := NewLifecycle()
+	ctx := context.Background()
+
+	count := 0
+	if err := lc.AddShutdown(func(context.Context) error {
+		count++
+		return nil
+	}); err != nil {
+		t.Fatalf("add shutdown hook: %v", err)
+	}
+
+	if err := lc.Shutdown(ctx); err != nil {
+		t.Fatalf("first shutdown: %v", err)
+	}
+	if err := lc.Shutdown(ctx); err != nil {
+		t.Fatalf("second shutdown: %v", err)
+	}
+
+	if count != 1 {
+		t.Fatalf("expected shutdown hook to run once, got %d", count)
+	}
+}

@@ -10,16 +10,19 @@ import (
 
 // Lifecycle 负责管理一组服务的注册、加载和卸载。
 type Lifecycle struct {
-	mu       sync.Mutex
-	services []Service
-	index    map[string]Service
-	loaded   bool
+	mu        sync.Mutex
+	services  []Service
+	shutdowns []func(context.Context) error
+	index     map[string]Service
+	loaded    bool
+	shutdown  bool
 }
 
 // NewLifecycle 创建一个新的 Lifecycle 实例。
 func NewLifecycle() *Lifecycle {
 	return &Lifecycle{
-		index: make(map[string]Service),
+		index:     make(map[string]Service),
+		shutdowns: make([]func(context.Context) error, 0, 8),
 	}
 }
 
@@ -49,6 +52,20 @@ func (lc *Lifecycle) Register(svcs ...Service) error {
 		lc.index[name] = svc
 	}
 
+	return nil
+}
+
+// AddShutdown 注册在生命周期最终 Shutdown 阶段执行的清理钩子。
+func (lc *Lifecycle) AddShutdown(hooks ...func(context.Context) error) error {
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+
+	for i, hook := range hooks {
+		if hook == nil {
+			return fmt.Errorf("boot: add shutdown hook at arg %d: %w", i, ErrNilShutdownHook)
+		}
+		lc.shutdowns = append(lc.shutdowns, hook)
+	}
 	return nil
 }
 
@@ -94,6 +111,20 @@ func (lc *Lifecycle) Unload(ctx context.Context) error {
 	return err
 }
 
+// Shutdown 按注册逆序执行所有清理钩子。
+func (lc *Lifecycle) Shutdown(ctx context.Context) error {
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+
+	if lc.shutdown {
+		return nil
+	}
+
+	err := shutdownReverse(ctx, lc.shutdowns, "shutdown")
+	lc.shutdown = true
+	return err
+}
+
 // unloadReverse 按逆序执行服务卸载，并聚合所有卸载错误。
 func unloadReverse(ctx context.Context, services []Service, action string) error {
 	var errs []error
@@ -103,6 +134,20 @@ func unloadReverse(ctx context.Context, services []Service, action string) error
 		svc := services[i]
 		if err := svc.Unload(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("boot: %s service %q: %w", action, svc.Name(), err))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// shutdownReverse 按逆序执行清理钩子，并聚合所有卸载错误。
+func shutdownReverse(ctx context.Context, shutdowns []func(context.Context) error, action string) error {
+	var errs []error
+
+	// 清理钩子同样按逆序执行，确保后注册的资源优先释放。
+	for i := len(shutdowns) - 1; i >= 0; i-- {
+		if err := shutdowns[i](ctx); err != nil {
+			errs = append(errs, fmt.Errorf("boot: %s hook %d: %w", action, i, err))
 		}
 	}
 

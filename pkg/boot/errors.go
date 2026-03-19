@@ -11,6 +11,8 @@ var (
 	ErrDuplicateServiceName = errors.New("boot: duplicate service name")
 	// ErrLifecycleLoaded 表示生命周期已经加载完成，不能继续注册服务。
 	ErrLifecycleLoaded = errors.New("boot: lifecycle already loaded")
+	// ErrNilShutdownHook 表示注册卸载清理钩子时传入了 nil。
+	ErrNilShutdownHook = errors.New("boot: nil shutdown hook")
 	// ErrNilDependency 表示注册依赖时传入了 nil 值。
 	ErrNilDependency = errors.New("boot: nil dependency")
 	// ErrDuplicateDependency 表示相同精确类型的依赖重复注册。

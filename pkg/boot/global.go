@@ -67,6 +67,11 @@ func Register(services ...Service) error {
 	return GetBoot().Register(services...)
 }
 
+// AddShutdown 注册全局生命周期最终 Shutdown 阶段的清理钩子。
+func AddShutdown(hooks ...func(context.Context) error) error {
+	return GetBoot().AddShutdown(hooks...)
+}
+
 // Load 加载全局管理器中的所有服务
 func Load(ctx context.Context) error {
 	return GetBoot().Load(ctx)
@@ -75,4 +80,9 @@ func Load(ctx context.Context) error {
 // Unload 卸载全局管理器中的所有服务
 func Unload(ctx context.Context) error {
 	return GetBoot().Unload(ctx)
+}
+
+// Shutdown 执行全局生命周期注册的最终清理钩子。
+func Shutdown(ctx context.Context) error {
+	return GetBoot().Shutdown(ctx)
 }

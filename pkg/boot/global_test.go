@@ -98,3 +98,39 @@ func TestGlobalUnloadReturnsError(t *testing.T) {
 		t.Fatalf("expected unload error, got %v", err)
 	}
 }
+
+// TestGlobalAddShutdownRunsOnShutdown 验证全局清理钩子会在 Shutdown 时执行。
+func TestGlobalAddShutdownRunsOnShutdown(t *testing.T) {
+	old := GetBoot()
+	SetBoot(NewBoot())
+	t.Cleanup(func() {
+		SetBoot(old)
+	})
+
+	ctx := context.Background()
+	called := false
+
+	if err := AddShutdown(func(context.Context) error {
+		called = true
+		return nil
+	}); err != nil {
+		t.Fatalf("add shutdown hook: %v", err)
+	}
+
+	if err := Load(ctx); err != nil {
+		t.Fatalf("load lifecycle: %v", err)
+	}
+	if err := Unload(ctx); err != nil {
+		t.Fatalf("unload lifecycle: %v", err)
+	}
+	if called {
+		t.Fatal("expected shutdown hook not to run during unload")
+	}
+	if err := Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown lifecycle: %v", err)
+	}
+
+	if !called {
+		t.Fatal("expected shutdown hook to be called")
+	}
+}
