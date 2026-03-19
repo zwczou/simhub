@@ -1,0 +1,11 @@
+build
+test.py
+diff.py
+*.yaml
+test.go
+*swagger.json
+*.pb.go
+*.pb.validate.go
+*.gw.go
+scripts/deploy.py
+scripts/*.py
