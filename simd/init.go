@@ -4,12 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/iot/simhub/pkg/boot"
 	"github.com/iot/simhub/pkg/logger/bunlog"
 	"github.com/iot/simhub/pkg/logger/otellog"
+	"github.com/iot/simhub/pkg/migration"
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
@@ -18,6 +20,7 @@ import (
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
+	"github.com/uptrace/bun/extra/bunotel"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -43,7 +46,10 @@ func (s *simServer) init() error {
 	if err := s.initRedis(); err != nil {
 		return err
 	}
-	return s.initDatabase()
+	if err := s.initDatabase(); err != nil {
+		return err
+	}
+	return s.initMigration()
 }
 
 // initZone 初始化进程默认时区。
@@ -201,6 +207,7 @@ func (s *simServer) initDatabase() error {
 
 		sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
 		db := bun.NewDB(sqldb, pgdialect.New())
+		db.AddQueryHook(bunotel.NewQueryHook(bunotel.WithDBName("splay")))
 		db.AddQueryHook(bunlog.NewQueryHook(
 			bunlog.WithLogSlow(sub.GetDuration("slow")),
 		))
@@ -215,6 +222,55 @@ func (s *simServer) initDatabase() error {
 
 		log.Info().Str("database_name", name).Msg("database initialized")
 	}
+	return nil
+}
+
+// migrationRegistry 按数据库名称注册对应的 migration 集合。
+var migrationRegistry = migration.NewRegistry()
+
+// shouldRunMigration 判断指定数据库是否启用迁移流程。
+func (s *simServer) shouldRunMigration(name string) bool {
+	sub := viper.Sub("database." + name)
+	if sub == nil {
+		return true
+	}
+	if sub.IsSet("migrate") && !sub.GetBool("migrate") {
+		return false
+	}
+	return true
+}
+
+// initMigration 根据启动参数执行数据库初始化、迁移或回滚。
+func (s *simServer) initMigration() error {
+	op := migration.DetectOp(os.Args)
+	if op == migration.OpNone {
+		return nil
+	}
+	defer os.Exit(0)
+
+	ctx := context.Background()
+	runner := migration.NewRunner(
+		s.dbs,
+		migration.WithRegistry(migrationRegistry),
+		migration.WithShouldRun(s.shouldRunMigration),
+	)
+
+	switch op {
+	case migration.OpInit:
+		if err := runner.Init(ctx); err != nil {
+			return err
+		}
+	case migration.OpUp:
+		if err := runner.Up(ctx); err != nil {
+			return err
+		}
+	case migration.OpDown:
+		if err := runner.Down(ctx); err != nil {
+			return err
+		}
+	}
+
+	log.Info().Str("migration_op", string(op)).Msg("migration finished")
 	return nil
 }
 
