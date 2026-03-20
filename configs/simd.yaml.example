@@ -12,6 +12,9 @@ http:
   enabled: true
   addr: ":6678"
 
+proxy:
+  enabled: true
+
 log:
   format: "console"
   level: "debug"

@@ -35,6 +35,12 @@ ratelimit:
   reload_period: "30s"
   failure_policy: "fail_open"
 
+redlock:
+  prefix: "redlock"
+  ttl: "10s"
+  retries: 3
+  retry_delay: "200ms"
+
 token:
   man:
     token_ttl: "10h"

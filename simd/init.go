@@ -13,6 +13,7 @@ import (
 	"github.com/iot/simhub/pkg/logger/otellog"
 	"github.com/iot/simhub/pkg/migration"
 	"github.com/iot/simhub/pkg/ratelimit"
+	"github.com/iot/simhub/pkg/red/redlock"
 	"github.com/iot/simhub/pkg/token"
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
@@ -46,6 +47,9 @@ func (s *simServer) init() error {
 		return err
 	}
 	if err := s.initRedis(); err != nil {
+		return err
+	}
+	if err := s.initRedisLock(); err != nil {
 		return err
 	}
 	if err := s.initLimiter(); err != nil {
@@ -200,6 +204,23 @@ func (s *simServer) initRedis() error {
 	return nil
 }
 
+// initRedisLock 初始化基于 Redis 的分布式锁管理器。
+func (s *simServer) initRedisLock() error {
+	rdb, ok := s.rdbs.Get("default")
+	if !ok {
+		return fmt.Errorf("redis default is not configured")
+	}
+
+	opts, err := s.newRedLockOptions()
+	if err != nil {
+		return err
+	}
+
+	s.rdlock = redlock.NewRedLock(rdb, opts...)
+	log.Info().Msg("redis lock initialized")
+	return nil
+}
+
 // initLimiter 初始化基于 Redis 的限流器并注册关闭钩子。
 func (s *simServer) initLimiter() error {
 	rdb, ok := s.rdbs.Get("limiter")
@@ -272,6 +293,41 @@ func (s *simServer) newLimiterOptions() ([]ratelimit.Option, error) {
 
 	if failurePolicy := sub.GetString("failure_policy"); failurePolicy != "" {
 		opts = append(opts, ratelimit.WithFailurePolicy(ratelimit.FailurePolicy(failurePolicy)))
+	}
+
+	return opts, nil
+}
+
+// newRedLockOptions 按配置构造分布式锁的可选项。
+func (s *simServer) newRedLockOptions() ([]redlock.Option, error) {
+	sub := viper.Sub("redlock")
+	if sub == nil {
+		return nil, nil
+	}
+
+	opts := make([]redlock.Option, 0, 4)
+	if prefix := sub.GetString("prefix"); prefix != "" {
+		opts = append(opts, redlock.WithPrefix(prefix))
+	}
+
+	if sub.IsSet("ttl") {
+		ttl := sub.GetDuration("ttl")
+		if ttl == 0 {
+			return nil, fmt.Errorf("redlock ttl is empty")
+		}
+		opts = append(opts, redlock.WithTtl(ttl))
+	}
+
+	if sub.IsSet("retries") {
+		opts = append(opts, redlock.WithRetries(sub.GetInt("retries")))
+	}
+
+	if sub.IsSet("retry_delay") {
+		retryDelay := sub.GetDuration("retry_delay")
+		if retryDelay == 0 {
+			return nil, fmt.Errorf("redlock retry_delay is empty")
+		}
+		opts = append(opts, redlock.WithRetryDelay(retryDelay))
 	}
 
 	return opts, nil

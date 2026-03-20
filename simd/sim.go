@@ -8,6 +8,7 @@ import (
 
 	"github.com/iot/simhub/pkg/boot"
 	"github.com/iot/simhub/pkg/ratelimit"
+	"github.com/iot/simhub/pkg/red/redlock"
 	"github.com/iot/simhub/pkg/token"
 	"github.com/rs/zerolog/log"
 )
@@ -21,6 +22,7 @@ type simServer struct {
 	rdbs      *boot.RedisStore
 	dbs       *boot.DbStore
 	limiter   *ratelimit.RedisRateLimiter
+	rdlock    *redlock.RedLock
 	userToken *token.UserToken
 	manToken  *token.ManToken
 	startAt   time.Time
@@ -48,7 +50,7 @@ func (s *simServer) Main() {
 	}
 
 	// 注册依赖变量
-	s.boot.Provide(s.boot, s.dbs, s.rdbs, s.limiter, s.userToken, s.manToken)
+	s.boot.Provide(s.boot, s.dbs, s.rdbs, s.limiter, s.userToken, s.manToken, s.rdlock)
 
 	// 加载注册的服务
 	s.boot.Load(context.Background())
