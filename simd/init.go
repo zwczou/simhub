@@ -12,6 +12,8 @@ import (
 	"github.com/iot/simhub/pkg/logger/bunlog"
 	"github.com/iot/simhub/pkg/logger/otellog"
 	"github.com/iot/simhub/pkg/migration"
+	"github.com/iot/simhub/pkg/ratelimit"
+	"github.com/iot/simhub/pkg/token"
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
@@ -44,6 +46,12 @@ func (s *simServer) init() error {
 		return err
 	}
 	if err := s.initRedis(); err != nil {
+		return err
+	}
+	if err := s.initLimiter(); err != nil {
+		return err
+	}
+	if err := s.initToken(); err != nil {
 		return err
 	}
 	if err := s.initDatabase(); err != nil {
@@ -192,6 +200,111 @@ func (s *simServer) initRedis() error {
 	return nil
 }
 
+// initLimiter 初始化基于 Redis 的限流器并注册关闭钩子。
+func (s *simServer) initLimiter() error {
+	rdb, ok := s.rdbs.Get("limiter")
+	if !ok {
+		return fmt.Errorf("redis limiter is not configured")
+	}
+
+	opts, err := s.newLimiterOptions()
+	if err != nil {
+		return err
+	}
+
+	limiter, err := ratelimit.NewRedisRateLimiter(context.Background(), rdb, opts...)
+	if err != nil {
+		return err
+	}
+
+	if err := s.boot.AddShutdown(func(context.Context) error {
+		limiter.Close()
+		return nil
+	}); err != nil {
+		limiter.Close()
+		return err
+	}
+
+	s.limiter = limiter
+	log.Info().Msg("limiter initialized")
+	return nil
+}
+
+// initToken 初始化前台与后台的 Token 管理器。
+func (s *simServer) initToken() error {
+	rdb, ok := s.rdbs.Get("user")
+	if !ok {
+		return fmt.Errorf("redis user is not configured")
+	}
+
+	userOpts, err := s.newTokenOptions("token.user")
+	if err != nil {
+		return err
+	}
+	manOpts, err := s.newTokenOptions("token.man")
+	if err != nil {
+		return err
+	}
+
+	s.userToken = token.NewUserToken(rdb, userOpts...)
+	s.manToken = token.NewManToken(rdb, manOpts...)
+
+	log.Info().Msg("token initialized")
+	return nil
+}
+
+// newLimiterOptions 按配置构造限流器的可选项。
+func (s *simServer) newLimiterOptions() ([]ratelimit.Option, error) {
+	sub := viper.Sub("ratelimit")
+	if sub == nil {
+		return nil, nil
+	}
+
+	opts := make([]ratelimit.Option, 0, 3)
+	if prefix := sub.GetString("prefix"); prefix != "" {
+		opts = append(opts, ratelimit.WithPrefix(prefix))
+	}
+
+	reloadPeriod := sub.GetDuration("reload_period")
+	if reloadPeriod > 0 {
+		opts = append(opts, ratelimit.WithReloadPeriod(reloadPeriod))
+	}
+
+	if failurePolicy := sub.GetString("failure_policy"); failurePolicy != "" {
+		opts = append(opts, ratelimit.WithFailurePolicy(ratelimit.FailurePolicy(failurePolicy)))
+	}
+
+	return opts, nil
+}
+
+// newTokenOptions 按配置构造 Token 管理器的可选项。
+func (s *simServer) newTokenOptions(path string) ([]token.Option, error) {
+	sub := viper.Sub(path)
+	if sub == nil {
+		return nil, nil
+	}
+
+	opts := make([]token.Option, 0, 3)
+
+	accessTtl := sub.GetDuration("token_ttl")
+	if accessTtl == 0 {
+		return nil, fmt.Errorf("%s token_ttl is empty", path)
+	}
+	opts = append(opts, token.WithAccessTtl(accessTtl))
+
+	refreshTtl := sub.GetDuration("refresh_ttl")
+	if refreshTtl == 0 {
+		return nil, fmt.Errorf("%s refresh_ttl is empty", path)
+	}
+	opts = append(opts, token.WithRefreshTtl(refreshTtl))
+
+	if sub.GetBool("unique") {
+		opts = append(opts, token.WithUnique())
+	}
+
+	return opts, nil
+}
+
 // initDatabase 初始化数据库连接并注册到 DbStore。
 func (s *simServer) initDatabase() error {
 	for name := range viper.GetStringMap("database") {
@@ -225,9 +338,6 @@ func (s *simServer) initDatabase() error {
 	return nil
 }
 
-// migrationRegistry 按数据库名称注册对应的 migration 集合。
-var migrationRegistry = migration.NewRegistry()
-
 // shouldRunMigration 判断指定数据库是否启用迁移流程。
 func (s *simServer) shouldRunMigration(name string) bool {
 	sub := viper.Sub("database." + name)
@@ -251,7 +361,6 @@ func (s *simServer) initMigration() error {
 	ctx := context.Background()
 	runner := migration.NewRunner(
 		s.dbs,
-		migration.WithRegistry(migrationRegistry),
 		migration.WithShouldRun(s.shouldRunMigration),
 	)
 

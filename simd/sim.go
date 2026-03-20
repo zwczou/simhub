@@ -7,20 +7,25 @@ import (
 	"time"
 
 	"github.com/iot/simhub/pkg/boot"
+	"github.com/iot/simhub/pkg/ratelimit"
+	"github.com/iot/simhub/pkg/token"
 	"github.com/rs/zerolog/log"
 )
 
 // simServer 是 simd 的核心服务器结构，负责管理服务生命周期、处理请求和协调各个组件
 type simServer struct {
-	mu       sync.RWMutex
-	wg       sync.WaitGroup
-	opts     *option
-	rdbs     *boot.RedisStore
-	dbs      *boot.DbStore
-	boot     *boot.Boot
-	startAt  time.Time
-	isClosed atomic.Bool
-	exitChan chan struct{}
+	mu        sync.RWMutex
+	wg        sync.WaitGroup
+	opts      *option
+	boot      *boot.Boot
+	rdbs      *boot.RedisStore
+	dbs       *boot.DbStore
+	limiter   *ratelimit.RedisRateLimiter
+	userToken *token.UserToken
+	manToken  *token.ManToken
+	startAt   time.Time
+	isClosed  atomic.Bool
+	exitChan  chan struct{}
 }
 
 // New 创建并返回一个新的 simServer 实例
@@ -36,12 +41,16 @@ func New(opts *option) *simServer {
 
 // Main 启动 simd 服务并加载已注册的生命周期组件。
 func (s *simServer) Main() {
+	// 初始化
 	err := s.init()
 	if err != nil {
 		log.Fatal().Err(err).Msg("init error")
 	}
 
-	s.boot.Provide(s.boot, s.dbs, s.rdbs)
+	// 注册依赖变量
+	s.boot.Provide(s.boot, s.dbs, s.rdbs, s.limiter, s.userToken, s.manToken)
+
+	// 加载注册的服务
 	s.boot.Load(context.Background())
 }
 
@@ -55,9 +64,13 @@ func (s *simServer) Exit() {
 	// 关闭API服务，此时API返回维护中错误
 	s.isClosed.Store(true)
 
+	// 卸载注册的服务
 	if err := s.boot.Unload(context.Background()); err != nil {
 		log.Error().Err(err).Msg("unload failed")
 	}
+
+	// 关闭Publish/Subscribe
+	s.boot.Close()
 
 	// 在等待一会儿，确保所有的请求都处理完毕
 	time.Sleep(time.Millisecond * 200)

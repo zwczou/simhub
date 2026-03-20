@@ -1,9 +1,8 @@
 mode: "debug"
-name: "gamed"
+name: "simd"
 zone: "UTC"
 services:
- - "gp.user"
- - "gp.man"
+ - "sim.man"
 
 grpc:
   enabled: true
@@ -29,14 +28,6 @@ static:
 
 fixture:
   dir: "./testdata"
-
-token:
-  man:
-    tokenttl: "10h"
-    refreshttl: "168h"
-  user:
-    tokenttl: "4h"
-    refreshttl: "168h"
 
 captcha:
   hourly_count: 5

@@ -13,16 +13,34 @@ redis:
     addr: "127.0.0.1:6379"
     pool_size: 40
     dbs: [0]
-  token:
+  user:
     addr: "127.0.0.1:6379"
     pool_size: 40
     dbs: [0]
-  websocket:
+  limiter:
     addr: "127.0.0.1:6379"
     pool_size: 40
-    dbs: [0]
+    dbs: [1]
 
 database:
   default:
     dsn: "postgres://icenet:Icenet(321)@localhost:5432/test?sslmode=disable"
     slow: "200ms"
+  user:
+    dsn: "postgres://icenet:Icenet(321)@localhost:5432/test?sslmode=disable"
+    slow: "200ms"
+
+ratelimit:
+  prefix: "ratelimit"
+  reload_period: "30s"
+  failure_policy: "fail_open"
+
+token:
+  man:
+    token_ttl: "10h"
+    refresh_ttl: "168h"
+    unique: true
+  user:
+    token_ttl: "4h"
+    refresh_ttl: "168h"
+    unique: false
