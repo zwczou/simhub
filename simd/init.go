@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/iot/simhub/migrations/defaultmgt"
 	"github.com/iot/simhub/pkg/boot"
 	"github.com/iot/simhub/pkg/logger/bunlog"
 	"github.com/iot/simhub/pkg/logger/otellog"
@@ -419,6 +420,7 @@ func (s *simServer) initMigration() error {
 		s.dbs,
 		migration.WithShouldRun(s.shouldRunMigration),
 	)
+	runner.MustRegister("default", defaultmgt.Migrations)
 
 	switch op {
 	case migration.OpInit:
