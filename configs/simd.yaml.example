@@ -2,7 +2,7 @@ mode: "debug"
 name: "simd"
 zone: "UTC"
 services:
- - "sim.man"
+ - "sim.user"
 
 grpc:
   enabled: true

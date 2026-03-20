@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -16,6 +17,7 @@ import (
 	"github.com/iot/simhub/pkg/ratelimit"
 	"github.com/iot/simhub/pkg/red/redlock"
 	"github.com/iot/simhub/pkg/token"
+	"github.com/iot/simhub/services/user"
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
@@ -62,7 +64,10 @@ func (s *simServer) init() error {
 	if err := s.initDatabase(); err != nil {
 		return err
 	}
-	return s.initMigration()
+	if err := s.initMigration(); err != nil {
+		return err
+	}
+	return s.initServices()
 }
 
 // initZone 初始化进程默认时区。
@@ -393,6 +398,48 @@ func (s *simServer) initDatabase() error {
 		log.Info().Str("database_name", name).Msg("database initialized")
 	}
 	return nil
+}
+
+// initServices 按配置注册需要加载的服务。
+func (s *simServer) initServices() error {
+	services, err := s.newConfiguredServices()
+	if err != nil {
+		return err
+	}
+	if len(services) == 0 {
+		return nil
+	}
+
+	if err := s.boot.Register(services...); err != nil {
+		return err
+	}
+
+	log.Info().Int("service_count", len(services)).Msg("services registered")
+	return nil
+}
+
+// newConfiguredServices 根据配置构造待注册的服务列表。
+func (s *simServer) newConfiguredServices() ([]boot.Service, error) {
+	factories := map[string]func() boot.Service{
+		"sim.user": user.NewService,
+	}
+
+	configured := viper.GetStringSlice("services")
+	services := make([]boot.Service, 0, len(configured))
+	for _, name := range configured {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+
+		factory, ok := factories[name]
+		if !ok {
+			return nil, fmt.Errorf("service %s is not supported", name)
+		}
+		services = append(services, factory())
+	}
+
+	return services, nil
 }
 
 // shouldRunMigration 判断指定数据库是否启用迁移流程。
