@@ -282,7 +282,7 @@ func TestRedisStoreSetAndGet(t *testing.T) {
 	}
 }
 
-// TestRedisStoreGetDefaultDB 测试 Get(name) 不传 db 默认使用 0
+// TestRedisStoreGetDefaultDB 测试 Get(name) 不传 db 默认使用该 name 的默认 db
 func TestRedisStoreGetDefaultDB(t *testing.T) {
 	rs := NewRedisStore()
 	mock0 := &mockUniversalClient{id: "user-0"}
@@ -290,13 +290,27 @@ func TestRedisStoreGetDefaultDB(t *testing.T) {
 	rs.Set("user", 0, mock0)
 	rs.Set("user", 1, mock1)
 
-	// 不传 db，默认获取 db=0
+	// 不传 db，默认获取首次注册的 db
 	got, ok := rs.Get("user")
 	if !ok {
 		t.Fatal("expected to find 'user' default db=0, got not found")
 	}
 	if got.(*mockUniversalClient).id != "user-0" {
 		t.Fatalf("expected id 'user-0', got '%s'", got.(*mockUniversalClient).id)
+	}
+}
+
+// TestRedisStoreGetOnlyNonZeroDefaultDb 测试仅注册非 0 db 时，Get(name) 仍可返回默认实例。
+func TestRedisStoreGetOnlyNonZeroDefaultDb(t *testing.T) {
+	rs := NewRedisStore()
+	rs.Set("limiter", 1, &mockUniversalClient{id: "limiter-1"})
+
+	got, ok := rs.Get("limiter")
+	if !ok {
+		t.Fatal("expected to find 'limiter' default db, got not found")
+	}
+	if got.(*mockUniversalClient).id != "limiter-1" {
+		t.Fatalf("expected id 'limiter-1', got '%s'", got.(*mockUniversalClient).id)
 	}
 }
 
@@ -355,6 +369,27 @@ func TestRedisStoreDefault(t *testing.T) {
 	got := rs.Default()
 	if got.(*mockUniversalClient).id != "user-0" {
 		t.Fatalf("expected default id 'user-0', got '%s'", got.(*mockUniversalClient).id)
+	}
+}
+
+// TestRedisStoreSetDefaultDb 测试切换某个 name 的默认 db。
+func TestRedisStoreSetDefaultDb(t *testing.T) {
+	rs := NewRedisStore()
+	rs.Set("limiter", 1, &mockUniversalClient{id: "limiter-1"})
+	rs.Set("limiter", 2, &mockUniversalClient{id: "limiter-2"})
+
+	got := rs.MustGet("limiter")
+	if got.(*mockUniversalClient).id != "limiter-1" {
+		t.Fatalf("expected initial default id 'limiter-1', got '%s'", got.(*mockUniversalClient).id)
+	}
+
+	if err := rs.SetDefaultDb("limiter", 2); err != nil {
+		t.Fatalf("SetDefaultDb() error = %v", err)
+	}
+
+	got = rs.MustGet("limiter")
+	if got.(*mockUniversalClient).id != "limiter-2" {
+		t.Fatalf("expected switched default id 'limiter-2', got '%s'", got.(*mockUniversalClient).id)
 	}
 }
 

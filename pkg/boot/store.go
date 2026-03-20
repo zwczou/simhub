@@ -122,45 +122,61 @@ func redisKey(name string, db int) string {
 }
 
 // RedisStore 是对 Store[redis.UniversalClient] 的封装，支持 (name, db) 二维索引
-// db 参数可选，默认为 0
+// db 参数可选，未传时使用该 name 的默认 db
 type RedisStore struct {
-	store *Store[redis.UniversalClient]
+	store           *Store[redis.UniversalClient]
+	defaultDbByName map[string]int
 }
 
 // NewRedisStore 创建一个 Redis 存储容器
-// 可选传入 defaultName 指定默认实例名称前缀
+// 可选传入 defaultName 指定默认实例名称
 func NewRedisStore(defaultName ...string) *RedisStore {
-	// 如果指定了 defaultName，内部默认 key 为 "name:0"
-	var internalDefault string
-	if len(defaultName) > 0 && defaultName[0] != "" {
-		internalDefault = redisKey(defaultName[0], 0)
-	}
 	return &RedisStore{
-		store: NewStore[redis.UniversalClient](internalDefault),
+		store:           NewStore[redis.UniversalClient](defaultName...),
+		defaultDbByName: make(map[string]int),
 	}
 }
 
 // Set 注册一个 Redis 实例，通过 (name, db) 唯一确定
 func (r *RedisStore) Set(name string, db int, value redis.UniversalClient) {
-	r.store.Set(redisKey(name, db), value)
+	key := redisKey(name, db)
+
+	r.store.mu.Lock()
+	defer r.store.mu.Unlock()
+
+	if _, ok := r.defaultDbByName[name]; !ok {
+		r.defaultDbByName[name] = db
+	}
+	if r.store.defaultName == "" || r.store.defaultName == name {
+		r.store.defaultName = key
+	}
+	r.store.instances[key] = value
 }
 
-// Get 按 name 和可选的 db 获取 Redis 实例，db 默认为 0
+// Get 按 name 和可选的 db 获取 Redis 实例，未传 db 时使用该 name 的默认 db
 func (r *RedisStore) Get(name string, db ...int) (redis.UniversalClient, bool) {
-	d := 0
 	if len(db) > 0 {
-		d = db[0]
+		return r.store.Get(redisKey(name, db[0]))
 	}
-	return r.store.Get(redisKey(name, d))
+
+	r.store.mu.RLock()
+	defaultDb, ok := r.defaultDbByName[name]
+	r.store.mu.RUnlock()
+	if !ok {
+		var zero redis.UniversalClient
+		return zero, false
+	}
+
+	return r.store.Get(redisKey(name, defaultDb))
 }
 
 // MustGet 按 name 和可选的 db 获取 Redis 实例，不存在时 panic
 func (r *RedisStore) MustGet(name string, db ...int) redis.UniversalClient {
-	d := 0
-	if len(db) > 0 {
-		d = db[0]
+	v, ok := r.Get(name, db...)
+	if !ok {
+		panic(fmt.Sprintf("boot: redis instance %q not found", redisLookupKey(name, db...)))
 	}
-	return r.store.MustGet(redisKey(name, d))
+	return v
 }
 
 // Default 获取默认 Redis 实例
@@ -168,9 +184,31 @@ func (r *RedisStore) Default() redis.UniversalClient {
 	return r.store.Default()
 }
 
+// SetDefaultDb 设置指定 name 的默认 db。
+func (r *RedisStore) SetDefaultDb(name string, db int) error {
+	key := redisKey(name, db)
+
+	r.store.mu.Lock()
+	defer r.store.mu.Unlock()
+
+	if _, ok := r.store.instances[key]; !ok {
+		return fmt.Errorf("boot: set redis default db %q: %w", key, ErrStoreInstanceNotFound)
+	}
+	r.defaultDbByName[name] = db
+	return nil
+}
+
 // Items 返回所有 Redis 实例的迭代器，key 格式为 "name:db"
 func (r *RedisStore) Items() iter.Seq2[string, redis.UniversalClient] {
 	return r.store.Items()
+}
+
+// redisLookupKey 返回 RedisStore 查找时使用的可读 key。
+func redisLookupKey(name string, db ...int) string {
+	if len(db) > 0 {
+		return redisKey(name, db[0])
+	}
+	return name
 }
 
 // DbStore 是对 Store[bun.IDB] 的封装，按 name 管理多个数据库实例
