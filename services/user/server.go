@@ -19,11 +19,6 @@ type userServer struct {
 
 // NewService 创建一个新的用户服务实例。
 func NewService() boot.Service {
-	return newUserServer()
-}
-
-// newUserServer 创建用户服务实例。
-func newUserServer() *userServer {
 	return &userServer{
 		name:     "sim.user",
 		exitChan: make(chan struct{}),
